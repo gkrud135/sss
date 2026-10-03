@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#078fc7">
+  <meta name="description" content="블루아카이브 한국·글로벌·일본 캐릭터 육성과 총력전·대결전·종합전술시험 택틱 계산기">
+  <title>BLUE LAB · 블루아카이브 시뮬레이터</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Blue Lab 홈"><span class="brand-symbol">B<span>＋</span></span><span>BLUE <b>LAB</b><small>블루아카이브 시뮬레이터</small></span></a>
+    <div class="header-end"><span class="server-badge"><i></i> KOREA / GLOBAL / JP</span><a href="#method">계산 기준 ↗</a></div>
+  </header>
+  <nav id="workspace-tabs" class="workspace-tabs" role="tablist" aria-label="연구실 메뉴">
+    <button id="tab-students" type="button" role="tab" data-workspace="students" aria-controls="view-students" aria-selected="true">학생·스킬 검색</button>
+    <button id="tab-team" type="button" role="tab" data-workspace="team" aria-controls="view-team" aria-selected="false" tabindex="-1">팀 편성</button>
+    <button id="tab-tactic" type="button" role="tab" data-workspace="tactic" aria-controls="view-tactic" aria-selected="false" tabindex="-1">택틱 시뮬레이터</button>
+  </nav>
+  <div id="workspace" class="workspace" data-view="students">
+    <aside class="roster-panel" aria-label="캐릭터 선택">
+      <div class="roster-heading"><h2>학생 목록</h2><span id="roster-count" class="count">…</span></div>
+      <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="이름으로 학생 찾기" aria-label="학생 이름 검색" autocomplete="off"><kbd>/</kbd></label>
+      <label class="search skill-search"><span aria-hidden="true">⌕</span><input id="skill-search" type="search" placeholder="스킬 이름·설명 검색" aria-label="스킬 이름·설명 검색" autocomplete="off"></label>
+      <div class="filters"><select id="release-filter" aria-label="학생 출시 서버"><option value="all">전체 · 일본 전용 포함</option><option value="global">한국·글로벌 출시</option><option value="japan-only">일본 전용 · 한국 미출시</option></select><select id="school-filter" aria-label="학원 필터"><option value="">모든 학원</option></select><select id="type-filter" aria-label="공격 타입 필터"><option value="">모든 공격 타입</option></select></div>
+      <div class="skill-filters"><label>스킬 효과<select id="skill-effect-filter"><option value="">모든 효과</option></select></label><label>스킬 종류<select id="skill-slot-filter"><option value="">모든 스킬</option><option value="Ex">EX 스킬</option><option value="Public">기본 스킬</option><option value="Passive">강화 스킬</option><option value="ExtraPassive">서브 스킬</option></select></label><label>효과 대상<select id="skill-target-filter"><option value="">모든 대상</option><option value="ally">아군</option><option value="self">자신</option><option value="enemy">적</option></select></label><button id="clear-search" class="quiet-button" type="button">검색 초기화</button></div>
+      <p class="search-note">애용품·고유무기 강화 스킬 포함</p>
+      <div id="student-list" class="student-list" role="list"><p class="empty">학생 데이터를 불러오는 중…</p></div>
+      <div class="roster-footer"><span class="tiny-dot"></span> 일본 전용 학생은 JP로 표시</div>
+    </aside>
+    <main id="main-content">
+      <div class="page-heading"><div><p class="eyebrow" id="workspace-eyebrow">SCHALE / STUDENT LIBRARY</p><h1 id="workspace-title">학생·스킬 검색</h1><p id="workspace-description">필요한 효과를 가진 학생을 찾고 스킬 수치를 확인하세요.</p></div><button id="reset" class="quiet-button" type="button">↺ 학생 설정 초기화</button></div>
+      <div id="load-error" class="error" hidden></div>
+      <div id="app-content" hidden>
+        <section id="view-students" role="tabpanel" aria-labelledby="tab-students">
+          <div class="view-intro"><p>왼쪽에서 스킬 효과나 설명으로 검색하세요. 일치한 스킬 이름을 검색 결과에서 확인할 수 있습니다.</p><button type="button" class="quiet-button" data-open-workspace="team">이 학생으로 팀 편성 →</button></div>
+          <div id="student-detail-host">        <div id="student-details">
+        <section id="student-profile" class="profile panel" aria-label="선택한 학생"></section>
+        <div class="main-grid">
+          <div class="left-column">
+            <section class="panel growth-panel">
+              <div class="section-heading"><div><span class="step">01</span><h2>육성 설정</h2></div><span id="growth-server-note" class="caption">변경 즉시 적용</span></div>
+              <div class="level-block"><label for="level">학생 레벨</label><div class="level-number">Lv. <input id="level" type="number" min="1" max="90" value="90" aria-label="학생 레벨"></div><input id="level-range" type="range" min="1" max="90" value="90" aria-label="학생 레벨 슬라이더"><div class="range-labels"><span>Lv. 1</span><span id="max-level-label">Lv. 90</span></div></div>
+              <div class="field-grid">
+                <label>성급<select id="stars"></select></label>
+                <label>인연 랭크<input id="bond" type="number" min="1" max="50" value="1"></label>
+                <label>고유무기<select id="weapon-stars"></select></label>
+                <label>고유무기 레벨<input id="weapon-level" type="number" min="1" max="60" value="1"></label>
+              </div>
+              <div class="equipment-row" id="equipment-fields"></div>
+              <div class="field-grid extra-growth"><label>애용품<select id="gear"><option value="0">미장착</option><option value="1">T1</option><option value="2">T2</option></select></label><label>잠재력 · 체력/공격/치유 공통<input id="potential" type="number" min="0" max="25" value="0"></label></div>
+              <label class="check"><input id="passive-enabled" type="checkbox" checked> 강화 스킬의 상시 자기 버프 적용</label>
+              <p class="helper">장비는 선택 티어의 최대 강화 기준. 인연은 선택 학생의 보너스만 반영합니다. 잠재력은 5성·Lv.90부터 적용됩니다.</p>
+            </section>
+            <section class="panel stat-panel"><div class="section-heading"><div><span class="step">02</span><h2>현재 능력치</h2></div><span class="caption">육성 + 입력 버프</span></div><div id="stats" class="stat-grid" aria-live="polite"></div><div id="stat-notes" class="helper"></div><details class="growth-chart"><summary>레벨별 체력·공격력 변화</summary><div id="level-chart"></div><p class="helper">현재 성급·장비·스킬 설정을 유지한 기준입니다. 저레벨에서 잠긴 장비와 잠재력은 제외됩니다.</p></details></section>
+            <section class="panel skill-panel"><div class="section-heading"><div><span class="step">03</span><h2>스킬 살펴보기</h2></div><span class="caption">레벨별 실제 수치</span></div><div id="skill-tabs" class="skill-tabs" role="tablist" aria-label="스킬 선택"></div><div class="skill-title-row"><h3 id="skill-name"></h3><label>Lv.<select id="skill-level" aria-label="선택 스킬 레벨"></select></label></div><p id="skill-description" class="skill-description"></p><div id="skill-meta" class="skill-meta"></div><div class="effect-field"><label for="effect-select">계산할 효과</label><select id="effect-select"></select></div><div id="effect-notes" class="helper"></div><label id="condition-label" class="check condition" hidden><input id="condition-assume" type="checkbox"> 이 효과의 발동 조건이 충족됐다고 가정</label><div id="condition-text" class="helper"></div></section>
+          </div>
+          <div class="right-column">
+
+            <section class="result-panel" aria-label="계산 결과"><div class="result-header"><span>SIMULATION RESULT</span><span id="result-status">LIVE</span></div><div id="result" aria-live="polite"></div></section>
+          </div>
+        </div>
+        </div>
+          </div>
+        </section>
+        <section id="view-team" role="tabpanel" aria-labelledby="tab-team" hidden>
+        <section class="panel team-panel" aria-label="팀 편성">
+          <div class="section-heading"><div><span class="step">TEAM</span><h2>팀 편성</h2></div><span class="caption">스트라이커 4 · 스페셜 2</span></div>
+          <div id="team-slots" class="team-slots"></div>
+          <div class="team-add-row"><span id="team-current-name"></span><label>편성 위치<select id="team-position" aria-label="편성 위치"></select></label><button id="team-add" class="quiet-button" type="button">현재 학생 편성</button></div>
+          <p class="helper">목록에서 학생을 찾은 뒤 편성합니다. 팀의 학생을 누르면 아래에 그 학생의 레벨·성급·장비·스킬 육성이 표시됩니다. 각 학생의 설정은 이 페이지에서 보관됩니다.</p>
+          <p id="team-message" class="helper" role="status"></p>
+        </section>
+          <div class="view-intro"><p>파티의 얼굴을 누르면 아래에서 해당 학생의 육성을 조절합니다.</p><button type="button" class="primary-button" data-open-workspace="tactic">이 팀으로 택틱 계산 →</button></div>
+          <div id="team-detail-host"></div>
+        </section>
+        <section id="view-tactic" role="tabpanel" aria-labelledby="tab-tactic" hidden>
+          <div class="view-intro"><p id="tactic-team-summary"></p><button type="button" class="quiet-button" data-open-workspace="team">팀 수정 ↗</button></div>
+        <div id="battle-tabs" class="battle-tabs" role="tablist" aria-label="전투 콘텐츠"><button type="button" role="tab" data-battle-mode="eliminate" aria-selected="false" tabindex="-1">대결전</button><button type="button" role="tab" data-battle-mode="drill" aria-selected="false" tabindex="-1">종합전술시험</button><button type="button" role="tab" data-battle-mode="raid" aria-selected="true">총력전</button><button type="button" role="tab" data-battle-mode="custom" aria-selected="false" tabindex="-1">직접 입력</button></div>
+        <section class="panel enemy-panel boss-panel"><div class="section-heading"><div><span class="step">04</span><h2>전투 조건</h2></div><span class="caption">실제 보스 데이터 / 직접 입력</span></div><div class="field-grid raid-fields"><label hidden>전투 종류<select id="raid-mode"><option value="custom">직접 입력</option><option value="raid" selected>총력전</option><option value="eliminate">대결전</option><option value="drill">종합전술시험</option></select></label><label>전투 서버<select id="battle-server"><option value="1">한국·글로벌</option><option value="0">일본</option></select></label><label id="drill-type-field" hidden>시험 종류<select id="drill-type"><option value="">모든 시험</option><option value="Shooting">사격 시험</option><option value="Defense">방어 시험</option><option value="Destruction">돌파 시험</option><option value="Escort">호위 시험</option></select></label><label><span id="raid-selector-title">보스</span><select id="raid-boss" disabled></select></label><label>난이도<select id="raid-difficulty" disabled></select></label><label>공격할 대상<select id="raid-target" disabled></select></label></div><p id="raid-info" class="helper"></p><div id="drill-rules" class="drill-rules" hidden></div><div class="field-grid"><label>적 방어 타입<select id="enemy-armor"></select></label><label>전장<select id="terrain"><option value="Street">시가지</option><option value="Outdoor">야외</option><option value="Indoor">실내</option></select></label><label>적 레벨<input id="enemy-level" type="number" min="1" max="100" value="90"></label><label>적 방어력<input id="enemy-defense" type="number" min="0" max="1000000" value="1000"></label></div><div class="buff-heading">버프 & 방어 보정 <span>%</span></div><div class="field-grid"><label>공격력 증가<input id="attack-buff" type="number" min="-80" max="1000" value="0"></label><label>치명 대미지 증가<input id="crit-buff" type="number" min="-80" max="1000" value="0"></label><label>적 방어력 감소<input id="def-down" type="number" min="0" max="80" value="0"></label><label>방어 관통 수치<input id="penetration" type="number" min="0" max="1000000" value="0"></label><label>속성 특효 증가<input id="effective-buff" type="number" min="0" max="1000" value="0"></label><label>EX 대미지 증가<input id="ex-buff" type="number" min="0" max="400" value="0"></label></div><details class="advanced"><summary>적 치명 저항·회피 & 추가 대미지</summary><div class="field-grid"><label>적 치명 저항 수치<input id="crit-resist" type="number" min="0" max="1000000" value="100"></label><label>적 치명 대미지 저항 (%)<input id="crit-dmg-resist" type="number" min="0" max="10000" value="50"></label><label>적 회피 수치<input id="evasion" type="number" min="0" max="1000000" value="0"></label><label>추가 대미지 증가 (%)<input id="damage-buff" type="number" min="0" max="900" value="0"></label></div></details><p class="helper">증가율은 추가 보정 입력값입니다. 속성 특효는 기본 약점 배율 2배인 경우에만 적용됩니다.</p></section>
+        <section id="tactic-panel" class="panel tactic-panel" aria-label="택틱 시뮬레이션">
+          <div class="section-heading"><div><span class="step">TACTIC</span><h2>전투 진행을 계산해 보세요.</h2></div><span class="caption">시간 · 누적 피해 · 페이즈 전환</span></div>
+          <div class="tactic-controls"><label>행동 실행 방식<select id="tactic-mode"><option value="timeline">지정한 시각대로</option><option value="sequence">코스트 모이면 순서대로</option></select></label><label>제한 시간 (초)<input id="sim-duration" type="number" min="1" max="600" value="180"></label><label>시작 코스트<input id="initial-cost" type="number" min="0" max="10" step=".1" value="0"></label><label class="check"><input id="sequence-repeat" type="checkbox">행동 반복</label><label>타임라인 반복 간격 (초)<input id="cycle-seconds" type="number" min="1" max="600" value="30"></label><button id="simulate" class="primary-button" type="button">택틱 계산</button></div>
+          <div class="editor-heading"><h3>1파티 EX 카드</h3><button id="action-add" class="quiet-button" type="button" hidden>＋ 행동 추가</button></div>
+          <details class="tactic-editor"><summary>시작 스킬 순서 · 5개 지정</summary><div id="starting-skills" class="field-grid"></div><p class="helper">앞의 3개가 시작 손패입니다. 사용한 EX는 대기열 끝으로 돌아가고 다음 카드가 들어옵니다.</p></details>
+          <div id="ex-palette" class="ex-palette" aria-label="파티 EX 스킬 카드"></div>
+          <p class="helper">얼굴 카드를 누르면 시간선에 이어 붙습니다. 빈 시간선을 누른 뒤 카드를 놓거나, 놓은 카드를 끌어 옮기세요. 코스트·다음 기믹·피해가 자동 갱신됩니다.</p><div class="video-toolbar"><button id="plan-play" type="button">▶ 미리보기</button><strong id="plan-clock">0:00.0</strong><label>확대<input id="timeline-zoom" type="range" min="3" max="20" value="8" aria-label="타임라인 확대"></label></div><div id="planned-timeline" class="planned-timeline" aria-label="파티 EX 시간선"></div>
+          <div id="quick-preview" class="quick-preview" aria-live="polite"></div><div id="ex-strip" class="ex-strip" aria-label="EX 사용 순서와 코스트"></div>
+          <div id="action-rows"></div>
+          <div class="boss-random-controls"><label>보스 패턴<select id="boss-pattern-mode"><option value="manual">실전 택틱 직접 배치</option><option value="random">실험용 랜덤 예시</option></select></label><label>예시 간격 (초)<input id="boss-pattern-interval" type="number" min="5" max="180" value="20"></label><button id="boss-reroll" class="quiet-button" type="button">↻ 예시 다시 뽑기</button><small id="boss-random-note">보스 AI의 발동 조건·시간표는 미검증입니다. 실전 패턴 시각과 대상을 직접 배치하세요. 패턴을 넣어야 생존을 추정할 수 있습니다.</small></div>
+          <details id="manual-enemy-settings" class="tactic-editor" open><summary>보스 패턴 직접 편집</summary><div class="editor-heading"><h3>적 공격 & 기믹 트랙</h3><button id="enemy-action-add" class="quiet-button" type="button">＋ 보스 패턴</button></div><div id="enemy-action-editor"></div></details>
+          <div class="field-grid"><label>받는 피해 계산<select id="incoming-mode"><option value="mean">평균 피해를 받을 때</option><option value="ceiling">최대 피해를 받을 때</option></select></label></div>
+          <details class="tactic-editor"><summary>이 보스의 실제 패턴 설명</summary><div id="enemy-pattern-list"></div></details>
+          <p class="helper">손패에 있는 EX만 배치할 수 있습니다. 코스트가 충족되는 시각으로 맞춰지고, 코스트 감소는 적용 프레임·사용 횟수·소수점 올림을 반영합니다. 히나(드레스)는 준비 후 무료 사격 3회로 이어집니다. 사용 시각은 전투 시작부터의 시간이며, 범위 버프는 팀이 범위 안에 있다고 가정합니다. 다른 변신·연속 EX와 조건부 특수 스킬은 아직 자동 재현하지 않습니다.</p>
+          <details class="tactic-editor"><summary>보스 페이즈 & 전환 시간</summary><p id="phase-source" class="helper"></p><div id="phase-rows"></div><div class="editor-buttons"><button id="phase-add" class="tiny-button" type="button">＋ 페이즈 추가</button><button id="phase-reload" class="tiny-button" type="button">보스 원본으로 다시 불러오기</button></div></details>
+          <details class="tactic-editor"><summary>자동 공격 & 기본 스킬 주기 조정</summary><p class="helper">일반 공격의 시작·탄창·재장전은 원본 프레임으로 추정합니다. 공격 속도 버프를 반영합니다. 기본 스킬은 설명에 주기가 있는 경우만 자동 발동하고, 알 수 없는 주기는 0으로 둡니다.</p><div id="auto-settings"></div></details>
+          <p id="tactic-status" class="helper" role="status"></p>
+          <div id="combat-model-note" class="model-note">실전 계산은 배치한 보스 패턴을 사용합니다. 보스 AI·이동·위치·성배·게이지 등은 미검증이며 자동 재현되지 않습니다. 실험용 랜덤 모드는 실제 AI의 규칙·확률과 다른 예시입니다.</div>
+          <div id="tactic-results" hidden>
+            <div id="case-summary" class="case-summary"></div>
+            <div id="tactic-graph" class="tactic-graph"></div><div id="cost-graph" class="cost-graph"></div>
+            <div class="playback"><button id="play-timeline" class="quiet-button" type="button">▶ 진행 보기</button><strong id="timeline-clock"></strong><span id="current-cost"></span><label class="sr-only" for="time-cursor">경과 시간</label><input id="time-cursor" type="range" min="0" max="180" step=".1" value="0"></div>
+            <div id="time-readout" class="time-readout"></div>
+            <h3>팀 생존 상태 · 이 시각의 HP</h3><div id="survival-summary" class="survival-summary"></div><div id="health-readout" class="health-readout"></div><div id="health-graph" class="health-graph"></div>
+            <h3>행동별 피해 · 이렇게 사용하면?</h3><div id="action-results" class="table-scroll"></div><h3>페이즈별 예상 완료 시간</h3><p class="helper">완료는 전투 시작부터의 경과 시간, 소요는 이전 페이즈 완료 이후의 시간입니다. 전환 대기 시간도 다음 페이즈의 소요에 포함됩니다.</p><div id="phase-times" class="table-scroll"></div>
+            <div class="timeline-columns"><div><h3>이때 일어난 일 <small>평균 경로</small></h3><ol id="timeline-events" class="event-list"></ol></div><div><h3>이때 활성화된 버프·디버프</h3><div id="active-buffs" class="active-buffs"></div></div></div>
+            <details class="tactic-editor"><summary>학생별 피해 기여 · 평균 경로</summary><div id="damage-share" class="damage-share"></div></details>
+            <details id="tactic-warnings" class="tactic-editor"></details>
+          </div>
+        </section>
+        </section>
+        <section id="method" class="method panel"><div><p class="eyebrow">ABOUT THIS CALCULATION</p><h2>수치의 기준을 확인하세요.</h2></div><div><p>직접 피해 효과 하나를 선택해 계산합니다. 레벨 차이, 방어력·방어 관통, 공격/방어 상성, 지형 적성, 안정률, 치명타, 명중률과 타격별 피해 상한을 반영합니다. 서로 다른 효과를 같은 대상에 자동 합산하지 않습니다.</p><p>반복 타격 프레임이 있는 직접 피해는 타격마다 계산합니다. HP 의존 효과·상태 이상 지속 피해·소환수·축적 피해·공격 변경은 별도 처리가 필요해 계산을 보류합니다. 스킬 설명은 확인할 수 있습니다. 1회 피해 계산과 택틱 계산은 별도로 표시합니다. 택틱은 직접 피해와 지원 버프를 사용하는 HP 기준 추정이며, 제외된 효과와 전투 기믹에 따라 실제 기록과 차이가 납니다.</p><p id="data-source"></p><p>Blue Archive 및 캐릭터 이미지의 권리는 원 권리자에게 있습니다. 비공식 팬 도구입니다.</p><a href="https://schaledb.com/" target="_blank" rel="noreferrer">Schale DB에서 원본 확인 ↗</a></div></section>
+      </div>
+      <footer>BLUE LAB <span>선생님의 다음 선택을 위한 작은 연구실.</span></footer>
+    </main>
+  </div>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>

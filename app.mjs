@@ -21,31 +21,23 @@ let preparedTeam, contextForSelection, tactic;
 const savedBuilds = new Map(), savedSelections = new Map();
 const teamIds = [10000, 13010, 10007, 13000, 26003, 20008];
 const terrainNames = { Street: '시가지', Outdoor: '야외', Indoor: '실내' };
+const CHART = { hp: '#0a95cc', atk: '#c98a14', grid: '#d5e3ed', axis: '#52697d' };
 const currentRegion = () => growthRegion(student, data);
 
-const workspaceViews = {
-  students: ['STUDENT LIBRARY', '학생·스킬 검색', '필요한 효과를 가진 학생을 찾고 스킬 수치를 확인하세요.'],
-  team: ['TEAM BUILDER', '팀 편성', '스트라이커 4명과 스페셜 2명. 각 학생의 육성을 조절하세요.'],
-  tactic: ['TACTIC SIMULATOR', '택틱 시뮬레이터', 'EX 카드와 보스 기믹을 시간선에 놓고 전투 경과를 확인하세요.']
-};
 function setWorkspaceView(view) {
-  if (!workspaceViews[view]) return;
+  if (!['build', 'tactic'].includes(view)) return;
   $('workspace').dataset.view = view;
   document.querySelector('.roster-panel').hidden = view === 'tactic';
-  $('reset').hidden = view === 'tactic';
   for (const button of $('workspace-tabs').querySelectorAll('[data-workspace]')) {
     const active = button.dataset.workspace === view;
     button.setAttribute('aria-selected', active); button.tabIndex = active ? 0 : -1;
     $(button.getAttribute('aria-controls')).hidden = !active;
   }
-  if (view !== 'tactic') $(view === 'team' ? 'team-detail-host' : 'student-detail-host').append($('student-details'));
-  const [label, title, description] = workspaceViews[view];
-  $('workspace-eyebrow').textContent = `SCHALE / ${label}`;
-  $('workspace-title').textContent = title; $('workspace-description').textContent = description;
   window.scrollTo({ top: 0 });
 }
+// One search box covers student names and skill text; the three skill selects narrow it further.
 function skillSearchSettings() {
-  return { query: $('skill-search').value, effect: $('skill-effect-filter').value,
+  return { query: $('search').value, effect: $('skill-effect-filter').value,
     slot: $('skill-slot-filter').value, target: $('skill-target-filter').value };
 }
 
@@ -56,18 +48,47 @@ function members() { return teamIds.filter(Boolean).map(id => {
 }); }
 function currentContext() { return contextForSelection; }
 
+const slotLabel = i => i < 4 ? `스트라이커 ${i + 1}` : `스페셜 ${i - 3}`;
+const battleNames = { raid: '총력전', eliminate: '대결전', drill: '종합전술시험', custom: '직접 입력' };
+let armedSlot = null;
+const setTeamMessage = text => { $('team-message').textContent = text; };
+
 function renderTeam() {
   savedBuilds.set(student.Id, build);
+  $('dock-mode').textContent = `${battleNames[$('raid-mode').value]} 편성`;
   $('team-slots').innerHTML = teamIds.map((id, slot) => {
     const s = data.students.find(s => s.Id === id);
-    const b = s ? id === student.Id ? build : savedBuilds.get(id) ?? defaultBuild(s,growthRegion(s,data)) : null;
-    return `<div class="team-slot ${id === student.Id ? 'active' : ''}"><small>${slot < 4 ? `STRIKER ${slot + 1}` : `SPECIAL ${slot - 3}`}</small><button class="team-member" data-team-edit="${slot}" ${!s ? 'disabled' : ''} aria-label="${s ? `${escape(s.Name)} 육성 수정` : '빈 자리'}">${s ? `<img src="https://schaledb.com/images/student/collection/${s.Id}.webp" alt="">${escape(s.Name)}${s.IsReleased?.[1]===false?' <em class="jp-label">JP</em>':''}` : '빈 자리'}</button>${s ? `<span class="team-growth-summary" data-growth-student="${s.Id}">Lv.${b.level} · ${b.stars}성 · EX ${b.skills.Ex}</span><button class="team-remove" data-team-remove="${slot}">편성 해제</button>` : ''}</div>`;
+    const kind = slot < 4 ? `STRIKER ${slot + 1}` : `SPECIAL ${slot - 3}`;
+    if (!s) {
+      const armed = slot === armedSlot;
+      return `<div class="slot empty ${armed ? 'armed' : ''}"><button type="button" class="slot-main" data-team-arm="${slot}" aria-pressed="${armed}"><span class="slot-kind">${kind}</span><span class="slot-empty">${armed ? '학생을 선택하세요' : '비어 있음'}</span></button></div>`;
+    }
+    const b = id === student.Id ? build : savedBuilds.get(id) ?? defaultBuild(s, growthRegion(s, data));
+    return `<div class="slot type-${escape(s.BulletType)} ${id === student.Id ? 'active' : ''}"><button type="button" class="slot-main" data-team-edit="${slot}" aria-label="${escape(s.Name)} 육성 수정"><span class="slot-kind">${kind}</span><img src="https://schaledb.com/images/student/collection/${s.Id}.webp" alt=""><span class="slot-name">${escape(s.Name)}${s.IsReleased?.[1]===false?' <em class="jp-label">JP</em>':''}</span><span class="slot-meta" data-growth-student="${s.Id}">Lv.${b.level} · ${b.stars}성 · EX ${b.skills.Ex}</span></button><button type="button" class="slot-clear" data-team-remove="${slot}" aria-label="${escape(s.Name)} 편성 해제"></button></div>`;
   }).join('');
+  renderTeamAction();
+}
+
+// One button for the selected student: add to an empty slot, replace an occupied one, or remove from the team.
+function renderTeamAction() {
   const positions = student.SquadType === 'Main' ? [0, 1, 2, 3] : [4, 5];
+  const current = teamIds.indexOf(student.Id);
   const old = Number($('team-position').value);
-  options($('team-position'), positions.map(i => [i, `${i < 4 ? `스트라이커 ${i + 1}` : `스페셜 ${i - 3}`}${teamIds[i] ? ` · ${data.students.find(s => s.Id === teamIds[i]).Name}` : ' · 빈 자리'}`]), positions.includes(old) ? old : positions.find(i => !teamIds[i]) ?? positions[0]);
-  $('team-current-name').textContent = student.Name;
-  $('tactic-team-summary').textContent = `현재 파티 · ${teamIds.map(id => data.students.find(s => s.Id === id)?.Name ?? '빈 자리').join(' / ')}`;
+  const target = current >= 0 ? current : positions.includes(armedSlot) ? armedSlot : positions.includes(old) ? old : positions.find(i => !teamIds[i]) ?? positions[0];
+  options($('team-position'), positions.map(i => [i, `${slotLabel(i)}${teamIds[i] ? ` · ${data.students.find(s => s.Id === teamIds[i]).Name}` : ' · 빈 자리'}`]), target);
+  $('team-position').disabled = current >= 0;
+  const role = current >= 0 ? 'remove' : teamIds[target] ? 'replace' : 'add';
+  $('team-add').dataset.role = role;
+  $('team-add').textContent = { remove: '편성 해제', replace: '교체', add: '편성' }[role];
+}
+
+function placeStudent(slot) {
+  if (teamIds.some((id, index) => index !== slot && id && data.students.find(s => s.Id === id).Name === student.Name)) {
+    setTeamMessage('이미 편성된 학생입니다. 같은 학생의 전투 스타일은 함께 편성할 수 없습니다.'); return false;
+  }
+  teamIds[slot] = student.Id; savedBuilds.set(student.Id, build); armedSlot = null;
+  setTeamMessage(`${student.Name} 편성 완료`);
+  renderTeam(); renderRoster(); update(); return true;
 }
 
 function renderRaid() {
@@ -156,7 +177,7 @@ function setBattleMode(mode) {
     'boss-pattern-mode':'manual','incoming-mode':'mean',...Object.fromEntries(['attack-buff','crit-buff','def-down','penetration','effective-buff','ex-buff','damage-buff'].map(id=>[id,0]))});
   renderRaid();
   if(draft)restoreControls(draft.controls);
-  tactic.restoreDraft(draft?.tactic);update();
+  tactic.restoreDraft(draft?.tactic);renderTeam();update();
 }
 
 function enemySettings() {
@@ -167,17 +188,26 @@ function enemySettings() {
   return result;
 }
 
+const filterIds = ['release-filter', 'school-filter', 'type-filter', 'skill-slot-filter', 'skill-effect-filter', 'skill-target-filter'];
 function renderRoster() {
-  const query = $('search').value.trim().toLocaleLowerCase().replace(/\s/g, '');
+  const squash = text => text.toLocaleLowerCase().replace(/\s/g, '');
+  const query = squash($('search').value.trim());
   const school = $('school-filter').value, type = $('type-filter').value;
-  const filters = skillSearchSettings(), skillSearching = Object.values(filters).some(v => v.trim());
-  const filtered = rosterStudents(data.students,$('release-filter').value).filter(s => s.Name.toLocaleLowerCase().replace(/\s/g, '').includes(query) && (!school || s.School === school) && (!type || s.BulletType === type)).flatMap(s => {
-    if (!skillSearching) return [{ student: s, match: null }];
-    const match = matchingSkills(s, data.labels, filters)[0];
-    return match ? [{ student: s, match }] : [];
+  const filters = skillSearchSettings(), skillFiltered = Boolean(filters.effect || filters.slot || filters.target);
+  const filtered = rosterStudents(data.students,$('release-filter').value).filter(s => (!school || s.School === school) && (!type || s.BulletType === type)).flatMap(s => {
+    if (!query && !skillFiltered) return [{ student: s, match: null }];
+    const nameMatch = Boolean(query) && squash(s.Name).includes(query);
+    if (nameMatch && !skillFiltered) return [{ student: s, match: null }];
+    const withText = matchingSkills(s, data.labels, filters)[0];
+    const withoutText = skillFiltered && query ? matchingSkills(s, data.labels, { ...filters, query: '' })[0] : withText;
+    if (skillFiltered && !withoutText) return [];
+    if (query && !nameMatch && !withText) return [];
+    return [{ student: s, match: withText ?? withoutText ?? null }];
   });
   $('roster-count').textContent = `${filtered.length} / ${data.students.length}`;
-  $('student-list').innerHTML = filtered.length ? filtered.map(({student:s,match}) => `<div role="listitem"><button type="button" class="student-item type-${escape(s.BulletType)}" data-student="${s.Id}" ${match?`data-match-skill="${escape(match.key)}" data-match-source="${escape(match.source)}"`:''} aria-pressed="${s.Id === student.Id}"><img class="avatar" src="https://schaledb.com/images/student/collection/${s.Id}.webp" loading="lazy" decoding="async" alt=""><span><strong>${escape(s.Name)}${s.IsReleased?.[1]===false?' <em class="jp-label">JP</em>':''}</strong><small>${escape(data.labels.School[s.School] ?? s.School)} · ${escape(roles[s.TacticRole] ?? s.TacticRole)}</small>${match?`<small class="skill-match">${escape(SKILL_NAMES[match.type])} · ${escape(match.skill.Name)}${match.source==='GearPublic'?' · 애용품 T2':match.source==='WeaponPassive'?' · 고유무기 2성':''}</small>`:''}</span><i class="type-dot" aria-hidden="true"></i></button></div>`).join('') : '<p class="empty">검색 결과가 없습니다.<br>검색어나 필터를 바꿔 보세요.</p>';
+  const activeFilters = filterIds.filter(id => $(id).value && $(id).value !== (id === 'release-filter' ? 'all' : '')).length;
+  $('filter-count').hidden = !activeFilters; $('filter-count').textContent = activeFilters;
+  $('student-list').innerHTML = filtered.length ? filtered.map(({student:s,match}) => `<div role="listitem"><button type="button" class="student-item type-${escape(s.BulletType)}" data-student="${s.Id}" ${match?`data-match-skill="${escape(match.key)}" data-match-source="${escape(match.source)}"`:''} aria-pressed="${s.Id === student.Id}"><img class="avatar" src="https://schaledb.com/images/student/collection/${s.Id}.webp" loading="lazy" decoding="async" alt=""><span class="student-text"><strong>${escape(s.Name)}${s.IsReleased?.[1]===false?' <em class="jp-label">JP</em>':''}${teamIds.includes(s.Id)?' <em class="team-flag">편성</em>':''}</strong><small>${escape(data.labels.School[s.School] ?? s.School)} · ${escape(roles[s.TacticRole] ?? s.TacticRole)}</small>${match?`<small class="skill-match">${escape(SKILL_NAMES[match.type])} · ${escape(match.skill.Name)}${match.source==='GearPublic'?' · 애용품 T2':match.source==='WeaponPassive'?' · 고유무기 2성':''}</small>`:''}</span><i class="type-dot" aria-hidden="true"></i></button></div>`).join('') : '<p class="empty">검색 결과가 없습니다.<br>검색어나 필터를 바꿔 보세요.</p>';
 }
 
 function selectStudent(id, updateHash = true) {
@@ -188,7 +218,8 @@ function selectStudent(id, updateHash = true) {
   selectedSkill = savedSelections.get(student.Id)?.skill ?? 'Ex'; selectedEffect = savedSelections.get(student.Id)?.effect ?? 0;
   $('condition-assume').checked = false;
   if (updateHash) history.replaceState(null, '', `#student-${student.Id}`);
-  $('student-profile').innerHTML = `<div class="profile-info"><div class="student-school">${escape(data.labels.School[student.School] ?? student.School)} <span> / ${student.SquadType === 'Main' ? 'STRIKER' : 'SPECIAL'}</span></div><h2>${escape(student.Name)}</h2><div class="student-stars" aria-label="기본 ${student.StarGrade}성">${'★'.repeat(student.StarGrade)}</div><div class="tags"><span class="tag attack type-${escape(student.BulletType)}">${escape(data.labels.BulletType[student.BulletType])}</span><span class="tag">${escape(data.labels.ArmorType[student.ArmorType])}</span><span class="tag">${escape(roles[student.TacticRole] ?? student.TacticRole)}</span><span class="tag">${escape(student.WeaponType)}</span></div></div><div class="profile-watermark" aria-hidden="true">BLUE</div><img class="portrait" src="https://schaledb.com/images/student/portrait/${student.Id}.webp" decoding="async" alt="${escape(student.Name)}"><span class="profile-number">STUDENT FILE / ${student.Id}</span>`;
+  $('student-profile').className = `profile type-${student.BulletType}`;
+  $('student-profile').innerHTML = `<div class="profile-info"><div class="student-school">${escape(data.labels.School[student.School] ?? student.School)}<span>${student.SquadType === 'Main' ? 'STRIKER' : 'SPECIAL'}</span></div><h2>${escape(student.Name)}${student.IsReleased?.[1]===false?' <em class="jp-label">JP</em>':''}</h2><div class="tags"><span class="tag star" aria-label="기본 ${student.StarGrade}성"><b>${student.StarGrade}</b>성</span><span class="tag attack">${escape(data.labels.BulletType[student.BulletType])}</span><span class="tag">${escape(data.labels.ArmorType[student.ArmorType])}</span><span class="tag">${escape(roles[student.TacticRole] ?? student.TacticRole)}</span><span class="tag">${escape(student.WeaponType)}</span></div></div><div class="profile-watermark" aria-hidden="true">BLUE</div><img class="portrait" src="https://schaledb.com/images/student/portrait/${student.Id}.webp" decoding="async" alt="${escape(student.Name)}"><span class="profile-number">STUDENT FILE / ${student.Id}</span>`;
   options($('stars'), Array.from({ length: 6 - student.StarGrade }, (_, i) => [i + student.StarGrade, `${i + student.StarGrade}성`]), build.stars);
   options($('weapon-stars'), [[0, '미장착'], ...Array.from({ length: currentRegion().WeaponMaxLevel / 10 - 2 }, (_, i) => [i + 1, `고유무기 ${i + 1}성`])], 0);
   $('equipment-fields').innerHTML = student.Equipment.map((category, slot) => `<label>${equipmentNames[category] ?? escape(category)}<select id="equipment-${slot}" data-equipment="${slot}" aria-label="${equipmentNames[category]} 티어">${[[0, '미장착'], ...Array.from({ length: currentRegion().EquipmentMaxLevel[slot] }, (_, i) => [i + 1, `T${i + 1}`])].map(([v, label]) => `<option value="${v}">${label}</option>`).join('')}</select></label>`).join('');
@@ -274,7 +305,7 @@ function renderChart() {
   const maxHP = Math.max(...points.map(s => s.MaxHP)), maxATK = Math.max(...points.map(s => s.AttackPower));
   const path = (stat, max) => points.map((s, i) => `${i ? 'L' : 'M'}${(pad + i / (points.length - 1) * (width - pad * 2)).toFixed(1)},${(height - pad - s[stat] / Math.max(max, 1) * (height - pad * 2)).toFixed(1)}`).join(' ');
   const text = levels.filter(level => [1, 15, 35, 60, 90].includes(level));
-  $('level-chart').innerHTML = `<div class="chart-legend"><span><i style="background:#00a7de"></i>체력 (최대 ${number(maxHP)})</span><span><i style="background:#e2ac56"></i>공격 (최대 ${number(maxATK)})</span></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="레벨별 체력과 공격력. 각 수치의 최댓값을 100%로 표시.">${[0, 1, 2, 3].map(i => `<path d="M${pad},${pad + i * (height - pad * 2) / 3}H${width - pad}" stroke="#eaf1f5"/>`).join('')}<path d="${path('MaxHP', maxHP)}" fill="none" stroke="#00a7de" stroke-width="2.5"/><path d="${path('AttackPower', maxATK)}" fill="none" stroke="#e2ac56" stroke-width="2.5"/>${text.map(level => `<text x="${pad + (level - 1) / (points.length - 1) * (width - pad * 2)}" y="${height - 3}" text-anchor="middle" font-size="9" fill="#9aadb9">${level}</text>`).join('')}</svg>`;
+  $('level-chart').innerHTML = `<div class="chart-legend"><span><i style="background:${CHART.hp}"></i>체력 (최대 ${number(maxHP)})</span><span><i style="background:${CHART.atk}"></i>공격 (최대 ${number(maxATK)})</span></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="레벨별 체력과 공격력. 각 수치의 최댓값을 100%로 표시.">${[0, 1, 2, 3].map(i => `<path d="M${pad},${pad + i * (height - pad * 2) / 3}H${width - pad}" stroke="${CHART.grid}"/>`).join('')}<path d="${path('MaxHP', maxHP)}" fill="none" stroke="${CHART.hp}" stroke-width="2.5"/><path d="${path('AttackPower', maxATK)}" fill="none" stroke="${CHART.atk}" stroke-width="2.5"/>${text.map(level => `<text x="${pad + (level - 1) / (points.length - 1) * (width - pad * 2)}" y="${height - 3}" text-anchor="middle" font-size="11" fill="${CHART.axis}">${level}</text>`).join('')}</svg>`;
 }
 
 function renderResult() {
@@ -302,7 +333,7 @@ function renderResult() {
   }
   $('result-status').textContent = 'LIVE';
   const grade = ['D', 'C', 'B', 'A', 'S', 'SS'][Math.min(result.affinity, 5)];
-  $('result').innerHTML = `<p class="result-title">평균 예상 피해량</p><div class="result-value">${number(result.expected)}<small>DMG</small></div><p class="result-subtitle">${escape(entry.skill.Name ?? '일반 공격')} · Lv.${level} · 효과 ${selectedEffect + 1} · ${result.hitCount}타</p><div class="result-pair"><div><span>비치명 평균</span><strong>${number(result.nonCrit.avg)}</strong><small>${number(result.nonCrit.min)} – ${number(result.nonCrit.max)}</small></div><div><span>치명타 평균</span><strong>${number(result.crit.avg)}</strong><small>${number(result.crit.min)} – ${number(result.crit.max)}</small></div></div><div class="breakdown"><div><span>합산 스킬 계수</span><strong>${(result.scale / 100).toFixed(2)}%</strong></div><div><span>공격 상성</span><strong class="accent">${escape(data.labels.BulletType[student.BulletType])} → ${escape(data.labels.ArmorType[enemy.armor])} ×${result.effectiveness.toFixed(2)}</strong></div><div><span>지형 적성</span><strong>${grade} · ×${result.terrainMod.toFixed(2)}</strong></div><div><span>방어력 반영 후 배율</span><strong>×${result.defenseMod.toFixed(3)}</strong></div><div><span>레벨 차이 보정</span><strong>×${result.levelMod.toFixed(2)}</strong></div><div><span>치명 확률</span><strong>${percent(result.critRate)}</strong></div><div><span>명중 확률</span><strong>${percent(result.accuracy)}</strong></div><div><span>안정률 하한</span><strong>${percent(result.stability)}</strong></div></div><p class="result-note">평균 예상 피해량은 안정률에 따른 평균과 치명·명중 확률을 반영합니다. 범위는 명중했을 때의 값입니다. ${effect.Condition ? '이 효과의 발동 조건 충족을 가정합니다. ' : ''}원본 반복 타격은 모두 같은 입력 상태로 합산합니다. 시간별 버프 변화는 택틱에서 계산합니다. 적 엄폐·실드·기믹·조건부 추가 효과는 제외합니다.</p>`;
+  $('result').innerHTML = `<p class="result-title">평균 예상 피해량</p><div class="result-value">${number(result.expected)}<small>DMG</small></div><p class="result-subtitle">${escape(entry.skill.Name ?? '일반 공격')} · Lv.${level} · 효과 ${selectedEffect + 1} · ${result.hitCount}타</p><div class="result-pair"><div><span>비치명 평균</span><strong>${number(result.nonCrit.avg)}</strong><small>${number(result.nonCrit.min)} – ${number(result.nonCrit.max)}</small></div><div><span>치명타 평균</span><strong>${number(result.crit.avg)}</strong><small>${number(result.crit.min)} – ${number(result.crit.max)}</small></div></div><div class="breakdown"><div><span>합산 스킬 계수</span><strong>${(result.scale / 100).toFixed(2)}%</strong></div><div><span>공격 상성</span><strong class="accent">${escape(data.labels.BulletType[student.BulletType])} 대 ${escape(data.labels.ArmorType[enemy.armor])} ×${result.effectiveness.toFixed(2)}</strong></div><div><span>지형 적성</span><strong>${grade} · ×${result.terrainMod.toFixed(2)}</strong></div><div><span>방어력 반영 후 배율</span><strong>×${result.defenseMod.toFixed(3)}</strong></div><div><span>레벨 차이 보정</span><strong>×${result.levelMod.toFixed(2)}</strong></div><div><span>치명 확률</span><strong>${percent(result.critRate)}</strong></div><div><span>명중 확률</span><strong>${percent(result.accuracy)}</strong></div><div><span>안정률 하한</span><strong>${percent(result.stability)}</strong></div></div><p class="result-note">평균 예상 피해량은 안정률에 따른 평균과 치명·명중 확률을 반영합니다. 범위는 명중했을 때의 값입니다. ${effect.Condition ? '이 효과의 발동 조건 충족을 가정합니다. ' : ''}원본 반복 타격은 모두 같은 입력 상태로 합산합니다. 시간별 버프 변화는 택틱에서 계산합니다. 적 엄폐·실드·기믹·조건부 추가 효과는 제외합니다.</p>`;
 }
 
 function update() {
@@ -335,6 +366,8 @@ async function init() {
       raid: activeRaid, battleKey: `${$('raid-mode').value}:${$('battle-server').value}`,
       difficulty: Number($('raid-difficulty').value) }));
     update();
+    // Narrow screens stack the settings above the board, so keep only the battle conditions open.
+    if (matchMedia('(max-width: 1180px)').matches) document.querySelectorAll('.tactic-side > .acc').forEach((acc, i) => { acc.open = i === 0; });
     $('app-content').hidden = false;
   } catch (error) {
     $('load-error').hidden = false;
@@ -345,15 +378,23 @@ async function init() {
   }
 }
 
-for (const id of ['search', 'skill-search', 'school-filter', 'type-filter', 'release-filter', 'skill-effect-filter', 'skill-slot-filter', 'skill-target-filter']) $(id).addEventListener(['search','skill-search'].includes(id) ? 'input' : 'change', () => { if (data) renderRoster(); });
+for (const id of ['search', ...filterIds]) $(id).addEventListener(id === 'search' ? 'input' : 'change', () => { if (data) renderRoster(); });
+$('filter-toggle').addEventListener('click', () => {
+  const open = $('filter-panel').hidden;
+  $('filter-panel').hidden = !open; $('filter-toggle').setAttribute('aria-expanded', open);
+});
 $('clear-search').addEventListener('click', () => {
-  for (const id of ['search','skill-search','school-filter','type-filter','skill-effect-filter','skill-slot-filter','skill-target-filter']) $(id).value = '';
+  for (const id of ['search', ...filterIds]) $(id).value = '';
   $('release-filter').value = 'all'; if(data) renderRoster();
 });
 $('student-list').addEventListener('click', event => {
   const button = event.target.closest('[data-student]'); if (!button) return;
   const key = button.dataset.matchSkill, source = button.dataset.matchSource;
   selectStudent(button.dataset.student);
+  if (armedSlot !== null) {
+    if ((student.SquadType === 'Main') === (armedSlot < 4)) placeStudent(armedSlot);
+    else setTeamMessage(`${slotLabel(armedSlot)} 칸입니다. ${armedSlot < 4 ? '스트라이커' : '스페셜'} 학생을 고르세요.`);
+  }
   if (key && !['GearPublic','WeaponPassive'].includes(source)) { selectedSkill=key; selectedEffect=0;update(); }
   $('search-skill-preview')?.remove();
   if (source === 'GearPublic' || source === 'WeaponPassive') {
@@ -371,19 +412,29 @@ $('workspace-tabs').addEventListener('keydown', event => {
   event.preventDefault();setWorkspaceView(tabs[next].dataset.workspace);tabs[next].focus();
 });
 document.querySelectorAll('[data-open-workspace]').forEach(button=>button.addEventListener('click',()=>setWorkspaceView(button.dataset.openWorkspace)));
+// A filled slot opens that student; an empty slot waits for the next student picked in the list.
 $('team-slots').addEventListener('click', event => {
-  const edit = event.target.closest('[data-team-edit]'), remove = event.target.closest('[data-team-remove]');
-  if (edit) { selectStudent(teamIds[Number(edit.dataset.teamEdit)]); $('student-profile').scrollIntoView({block:'start'}); }
-  if (remove) { teamIds[Number(remove.dataset.teamRemove)] = null; renderTeam(); update(); }
+  const edit = event.target.closest('[data-team-edit]'), remove = event.target.closest('[data-team-remove]'), arm = event.target.closest('[data-team-arm]');
+  if (edit) { armedSlot = null; selectStudent(teamIds[Number(edit.dataset.teamEdit)]); $('student-profile').scrollIntoView({block:'nearest'}); }
+  if (remove) {
+    const slot = Number(remove.dataset.teamRemove);
+    setTeamMessage(`${data.students.find(s => s.Id === teamIds[slot]).Name} 편성 해제`);
+    teamIds[slot] = null; armedSlot = null; renderTeam(); renderRoster(); update();
+  }
+  if (arm) {
+    const slot = Number(arm.dataset.teamArm);
+    armedSlot = armedSlot === slot ? null : slot;
+    setTeamMessage(armedSlot === null ? '' : `${slotLabel(slot)} 칸을 골랐습니다. ${slot < 4 ? '스트라이커' : '스페셜'} 학생을 목록에서 누르면 바로 편성됩니다.`);
+    renderTeam();
+  }
 });
 $('team-add').addEventListener('click', () => {
-  const slot = Number($('team-position').value);
-  if (teamIds.some((id, index) => index !== slot && id && data.students.find(s => s.Id === id).Name === student.Name)) {
-    $('team-message').textContent = '이미 편성된 학생입니다. 같은 학생의 전투 스타일은 함께 편성할 수 없습니다.'; return;
-  }
-  teamIds[slot] = student.Id; savedBuilds.set(student.Id, build); $('team-message').textContent = `${student.Name} 편성 완료`;
-  renderTeam(); update();
+  const current = teamIds.indexOf(student.Id);
+  if (current < 0) { placeStudent(Number($('team-position').value)); return; }
+  teamIds[current] = null; setTeamMessage(`${student.Name} 편성 해제`);
+  renderTeam(); renderRoster(); update();
 });
+$('team-position').addEventListener('change', () => { armedSlot = null; renderTeam(); });
 for (const id of ['raid-boss', 'raid-difficulty', 'raid-target','battle-server','drill-type']) $(id).addEventListener('change', () => { renderRaid(); update(); });
 $('raid-mode').addEventListener('change',()=>setBattleMode($('raid-mode').value));
 $('battle-tabs').addEventListener('click',event=>{const button=event.target.closest('[data-battle-mode]');if(button)setBattleMode(button.dataset.battleMode);});
@@ -394,6 +445,7 @@ $('battle-tabs').addEventListener('keydown',event=>{
   event.preventDefault();setBattleMode(tabs[next].dataset.battleMode);tabs[next].focus();
 });
 $('student-list').addEventListener('error', event => { if (event.target.tagName === 'IMG') { event.target.removeAttribute('src'); event.target.style.visibility = 'hidden'; } }, true);
+$('team-slots').addEventListener('error', event => { if (event.target.tagName === 'IMG') event.target.hidden = true; }, true);
 $('student-profile').addEventListener('error', event => { if (event.target.tagName === 'IMG') event.target.hidden = true; }, true);
 
 const growthFields = { level: 'level', 'level-range': 'level', stars: 'stars', bond: 'bond', 'weapon-stars': 'weaponStars', 'weapon-level': 'weaponLevel', gear: 'gear', potential: 'potential' };
@@ -438,6 +490,7 @@ $('reset').addEventListener('click', () => {
   renderRaid(); update();
 });
 document.querySelector('.growth-chart').addEventListener('toggle', event => { if (event.target.open && data) renderChart(); });
-document.addEventListener('keydown', event => { if (event.key === '/' && !event.ctrlKey && !event.metaKey && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) { event.preventDefault(); if($('workspace').dataset.view==='tactic')setWorkspaceView('students');$('search').focus(); } });
+document.addEventListener('keydown', event => { if (event.key === '/' && !event.ctrlKey && !event.metaKey && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) { event.preventDefault(); if($('workspace').dataset.view==='tactic')setWorkspaceView('build');$('search').focus(); } });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && armedSlot !== null) { armedSlot = null; setTeamMessage(''); renderTeam(); } });
 window.addEventListener('hashchange', () => { const match = location.hash.match(/^#student-(\d+)$/); if (match && data) selectStudent(match[1], false); });
 init();

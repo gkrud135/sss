@@ -9,8 +9,9 @@ export class EnemyUI {
     this.getState=getState;this.changed=changed;this.manual=[];this.generated=[];this.selected=0;this.signature='';this.saved=new Map();
     this.seed=crypto.getRandomValues(new Uint32Array(1))[0];this.patternKey='';this.phases=[];
     for(const id of ['boss-pattern-mode','boss-pattern-interval']) $(id).addEventListener('change',()=>{this.refresh(this.phases);this.render();changed();});
-    $('boss-reroll').addEventListener('click',()=>{this.seed=crypto.getRandomValues(new Uint32Array(1))[0];this.refresh(this.phases);changed();});
-    $('enemy-action-add').addEventListener('click',()=>{
+    // One button, two roles: draw a new example pattern in random mode, add a pattern otherwise.
+    $('boss-action').addEventListener('click',()=>{
+      if(this.random){this.seed=crypto.getRandomValues(new Uint32Array(1))[0];this.refresh(this.phases);changed();return;}
       const state=getState(),actor=state.enemy.character,choices=enemyActions(state.raidData,state.enemy);
       if(!actor||!choices.length)return;
       this.plan.push({enemyId:actor.Id,skillId:choices[0].key,effectIndex:0,time:this.plan.length?this.plan.at(-1).time+10:10,
@@ -41,13 +42,14 @@ export class EnemyUI {
     const s=this.getState(),key=JSON.stringify([s.raid?.Id,s.difficulty,phases.map(p=>p.enemy.character?.Id),s.members.map(m=>m.student.Id),Number($('sim-duration').value),Number($('boss-pattern-interval').value),this.seed]);
     if(key!==this.patternKey){this.patternKey=key;this.generated=randomBossPlan({...s,phases,duration:Number($('sim-duration').value),interval:Number($('boss-pattern-interval').value),seed:this.seed});}
     $('manual-enemy-settings').hidden=this.random;
-    $('boss-pattern-interval').disabled=!this.random;$('boss-reroll').disabled=!this.random||!s.enemy.character;
+    $('boss-pattern-interval').disabled=!this.random;$('boss-pattern-interval').closest('label').hidden=!this.random;
+    $('boss-action').disabled=!s.enemy.character;$('boss-action').textContent=this.random?'예시 다시 뽑기':'보스 패턴 추가';
     $('boss-random-note').textContent=this.random?'실험용: 실제 AI 조건·확률과 다른 임의 순서·간격입니다.':'보스 AI의 발동 조건·시간표는 미검증입니다. 실전 패턴 시각과 대상을 직접 배치하세요. 패턴을 넣어야 생존을 추정할 수 있습니다.';
   }
   sync() {
     const s=this.getState(),signature=`${s.battleKey??''}:${s.raid?.Id}:${s.difficulty}`;
     if(signature!==this.signature){if(this.signature)this.saved.set(this.signature,this.manual);this.signature=signature;this.manual=this.saved.get(signature)??[];this.selected=0;}
-    $('enemy-action-add').disabled=!s.enemy.character;
+    $('boss-action').disabled=!s.enemy.character;
     this.render();
   }
   select(index){this.selected=index;this.render();}

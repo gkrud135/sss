@@ -44,6 +44,7 @@
     </aside>
 
     <main id="main-content">
+      <div id="loading" class="loading" role="status"><i aria-hidden="true"></i>학생·보스 데이터를 불러오는 중입니다</div>
       <div id="load-error" class="error" hidden></div>
       <div id="app-content" hidden>
 
@@ -112,6 +113,7 @@
                 </section>
                 <section class="result-panel" aria-label="계산 결과">
                   <div class="result-header"><span>SIMULATION RESULT</span><span id="result-status">LIVE</span></div>
+                  <div class="result-target"><span class="result-target-label">대상</span><span id="result-target"></span><button type="button" class="link-button" data-open-workspace="tactic">전투 조건 변경</button></div>
                   <div id="result" aria-live="polite"></div>
                 </section>
               </div>
@@ -226,7 +228,7 @@
 
             <div class="tactic-stage" id="tactic-panel">
               <section class="panel stage-panel" aria-label="택틱 시뮬레이션">
-                <header class="panel-head"><h2>작전 보드</h2><button type="button" class="btn btn-ghost btn-sm" data-open-workspace="build">편성 수정</button></header>
+                <header class="panel-head"><h2>작전 보드</h2><span class="caption board-caption">밝은 카드 3장이 지금 쓸 수 있는 손패입니다</span><button type="button" class="btn btn-ghost btn-sm" data-open-workspace="build">편성 수정</button></header>
                 <div class="panel-body">
                   <div id="ex-palette" class="ex-palette" aria-label="파티 EX 스킬 카드"></div>
                   <div class="transport">

@@ -16,6 +16,7 @@ const INK = { grid: '#d5e3ed', axis: '#52697d', cursor: '#0b1a2c' };
 const ARROW = '<i class="to" aria-hidden="true"></i><span class="sr-only"> 에서 </span>';
 const label = text => esc(text).replaceAll(' → ', ` ${ARROW} `);
 const clamp01 = n => Math.max(0, Math.min(1, n));
+const shortHP = n => n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}K` : `${Math.round(n)}`;
 const opts = (rows, selected) => rows.map(([value, label]) => `<option value="${esc(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${esc(label)}</option>`).join('');
 
 export function tacticInputStamp(input) {
@@ -60,7 +61,7 @@ export class TacticUI {
       const time = Math.max(0, Math.min(duration, (event.clientX - rect.left) / rect.width * duration));
       this.stop(); $('time-cursor').value = time; $('plan-clock').textContent = seconds(time);
       this.insertionTime=time;
-      if (this.result) this.renderTime(); else $('plan-playhead').style.left = `${124 + time / duration * Math.max(500, duration * (Number($('timeline-zoom').value) || 8))}px`;
+      if (this.result) this.renderTime(); else this.placePlayhead(time);
     });
     $('planned-timeline').addEventListener('pointermove', event => {
       if (!this.drag) return;
@@ -171,8 +172,9 @@ export class TacticUI {
     $('ex-palette').innerHTML=members.map(m=>{
       const entry=this.paletteEntry(m,at);
       const cost=exCost(entry?.skill??{},prepared.get(m.student.Id).build.skills.Ex??1,modifiers.get(m.student.Id));
-      const disabled=!deck.hand.includes(m.student.Id)||deaths.has(m.student.Id);
-      return `<button type="button" class="ex-card" ${disabled?'disabled':''} data-ex-student="${m.student.Id}" aria-label="${esc(m.student.Name)} EX 추가, 코스트 ${cost}"><img src="https://schaledb.com/images/student/collection/${m.student.Id}.webp" alt=""><span><strong>${esc(m.student.Name)}</strong><small>${esc(entry?.skill.Name??'EX')}</small></span><b class="ex-cost">${cost}</b></button>`;
+      // Only the three cards in hand can be placed; say why the others are greyed out.
+      const state=deaths.has(m.student.Id)?'전투 불능':deck.hand.includes(m.student.Id)?'':'대기';
+      return `<button type="button" class="ex-card" ${state?'disabled':''} data-ex-student="${m.student.Id}" aria-label="${esc(m.student.Name)} EX ${state||'추가'}, 코스트 ${cost}"><img src="https://schaledb.com/images/student/collection/${m.student.Id}.webp" alt=""><span><strong>${esc(m.student.Name)}</strong><small>${esc(entry?.skill.Name??'EX')}</small></span><b class="ex-cost">${cost}</b>${state?`<em class="ex-state">${state}</em>`:''}</button>`;
     }).join('')||'<p class="helper">먼저 위에서 파티를 편성하세요.</p>';
   }
   renderStarting(){
@@ -185,14 +187,24 @@ export class TacticUI {
     const zoom=Number($('timeline-zoom').value)||8,width=Math.max(500,duration*zoom);
     $('planned-timeline').style.setProperty('--track-width',`${width}px`);$('planned-timeline').style.setProperty('--zoom',`${zoom}px`);
     const mean=this.result?.paths[0];
+    // Cards that would cover each other are stacked into two lanes.
+    const clipWidth=a=>Math.max(92,(a.delay+.5)*zoom),lanes=new Map(),ends=[];
+    for(const i of this.sequence.map((_,i)=>i).sort((x,y)=>this.sequence[x].earliest-this.sequence[y].earliest)){
+      const a=this.sequence[i],left=Math.min(1,a.earliest/duration)*width;
+      let lane=ends.findIndex(end=>end<=left);
+      if(lane<0)lane=ends.length<2?ends.length:ends.indexOf(Math.min(...ends));
+      ends[lane]=left+clipWidth(a)+2;lanes.set(i,lane);
+    }
+    const stacked=ends.length>1;
     const clips=this.sequence.map((a,i)=>{
       const m=members.find(m=>m.student.Id===a.studentId);if(!m)return '';
-      return `<button type="button" class="party-clip ${i===this.selectedAction?'selected':''}" data-planned-action="${i}" style="left:${Math.min(100,a.earliest/duration*100)}%;width:${Math.max(92,(a.delay+.5)*zoom)}px" aria-label="${esc(m.student.Name)} EX, ${a.earliest.toFixed(1)}초. 끌어서 시각 변경"><img src="https://schaledb.com/images/student/collection/${m.student.Id}.webp" alt=""><span><b>${esc(m.student.Name)}</b><small>${a.earliest.toFixed(1)}초</small></span></button>`;
+      return `<button type="button" class="party-clip ${i===this.selectedAction?'selected':''} ${stacked?`compact lane-${lanes.get(i)}`:''}" data-planned-action="${i}" style="left:${Math.min(100,a.earliest/duration*100)}%;width:${clipWidth(a)}px" aria-label="${esc(m.student.Name)} EX, ${a.earliest.toFixed(1)}초. 끌어서 시각 변경"><img src="https://schaledb.com/images/student/collection/${m.student.Id}.webp" alt=""><span><b>${esc(m.student.Name)}</b><small>${a.earliest.toFixed(1)}초</small></span></button>`;
     }).join('');
     const actorId=this.phases[Math.min(pointAt(mean??{timeline:[]},Number($('time-cursor').value)).phase??0,this.phases.length-1)]?.enemy.character?.Id;
     const visible=this.enemies.plan.map((a,i)=>({a,i})).filter(({a,i})=>!this.enemies.random || (mean&&!this.dirty?mean.events.some(e=>e.type==='enemy-cast'&&e.enemyActionIndex===i):a.enemyId===(this.phases[0]?.enemy.character?.Id??actorId)));
     const enemyClips=visible.map(({a,i})=>`<button type="button" data-planned-enemy="${i}" ${this.enemies.random?'class="random-pattern" tabindex="-1"':''} style="left:${Math.min(100,a.time/duration*100)}%;width:${Math.max(64,(a.delay+.5)*zoom)}px" aria-label="보스 패턴 ${i+1}, ${a.time.toFixed(1)}초"><b>${esc(raidData.enemySkills[a.skillId]?.Name??'기믹')}</b><small>${a.time.toFixed(1)}초</small></button>`).join('');
-    $('planned-timeline').innerHTML=`<div class="plan-axis"><span>1 PARTY</span><div>${Array.from({length:Math.floor(duration/10)+1},(_,i)=>`<small style="left:${i*10/duration*100}%">${i*10}초</small>`).join('')}</div></div><div id="plan-playhead" class="plan-playhead" style="left:${124+Number($('time-cursor').value)/duration*width}px"></div><div class="plan-row party-row"><strong>파티 EX</strong><div class="plan-track">${clips}</div></div><div class="plan-row enemy-track"><strong>보스 / 기믹</strong><div class="plan-track">${enemyClips}</div></div>`;
+    $('planned-timeline').innerHTML=`<div class="plan-axis"><span>1 PARTY</span><div>${Array.from({length:Math.floor(duration/10)+1},(_,i)=>`<small style="left:${i*10/duration*100}%">${i*10}초</small>`).join('')}</div></div><div id="plan-playhead" class="plan-playhead"></div><div class="plan-row party-row"><strong>파티 EX</strong><div class="plan-track">${clips}</div></div><div class="plan-row enemy-track"><strong>보스 / 기믹</strong><div class="plan-track">${enemyClips}</div></div>`;
+    this.placePlayhead(Number($('time-cursor').value));
   }
   input() {
     const state=this.getState();this.enemies.refresh(this.phases);
@@ -353,9 +365,13 @@ export class TacticUI {
   }
   renderGraph() {
     const r = this.result, w = 900, h = 260, left = 58, top = 16, bottom = 32;
-    const x = t => left + t / r.duration * (w - left - 20), y = d => h - bottom - d / Math.max(r.totalHP, 1) * (h - top - bottom);
-    let target = 0;
-    $('tactic-graph').innerHTML = `<h3>누적 피해 <small>경과 시간별 · 점선은 페이즈 HP 경계</small></h3><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="경과 시간별 평균, 상위 5% 추정, 이론 고점의 누적 피해 그래프">${r.phases.map(p => { target += p.hp; return `<path d="M${left},${y(target)}H${w - 20}" stroke="${INK.grid}" stroke-dasharray="4 4"/><text x="${left - 7}" y="${y(target) + 4}" text-anchor="end" fill="${INK.axis}" font-size="13">${(target / 1e6).toFixed(1)}M</text>`; }).join('')}${[0, .25, .5, .75, 1].map(f => `<text x="${x(r.duration * f)}" y="${h - 9}" text-anchor="middle" fill="${INK.axis}" font-size="13">${Math.round(r.duration * f)}초</text>`).join('')}${[...r.paths].reverse().map(p => { const points = [...p.timeline]; if (p.clearTime !== null) points.push({ time: r.duration, damage: p.damage }); return `<path d="${points.map((p, i) => `${i ? 'L' : 'M'}${x(p.time).toFixed(2)},${y(p.damage).toFixed(2)}`).join(' ')}" stroke="${CASE_COLOR[p.key]}" fill="none" stroke-width="2.5"/>`; }).join('')}${r.paths[0].events.filter(e => e.actionId !== undefined && e.type === 'cast').map((e, i) => `<g data-event-time="${e.time}" style="cursor:pointer"><title>${esc(seconds(e.time) + ' · ' + e.label.replaceAll(' → ', ' > '))}</title><path d="M${x(e.time)},${top}V${h-bottom}" stroke="${INK.grid}" stroke-dasharray="2 4"/><circle cx="${x(e.time)}" cy="${top + 8 + i % 3 * 14}" r="5" fill="${INK.cursor}"/></g>`).join('')}<path id="graph-cursor" d="M${left},${top}V${h - bottom}" stroke="${INK.cursor}" opacity=".5"/></svg><div class="chart-legend">${CASES.map(c => `<span><i style="background:${CASE_COLOR[c.key]}"></i>${esc(c.label)}</span>`).join('')}</div>`;
+    // Scale to the first phase or the best path, whichever is larger, so a short run is not a flat line at the bottom.
+    const peak = Math.max(0, ...r.paths.map(p => p.damage)), yMax = Math.max(1, Math.min(r.totalHP, Math.max(peak * 1.12, r.phases[0]?.hp ?? 0)));
+    const x = t => left + t / r.duration * (w - left - 20), y = d => h - bottom - Math.min(d, yMax) / yMax * (h - top - bottom);
+    const bounds = []; let sum = 0;
+    for (const p of r.phases) { sum += p.hp; if (sum <= yMax * 1.0001) bounds.push(sum); }
+    const axisTop = bounds.at(-1) >= yMax * .97 ? '' : `<path d="M${left},${y(yMax)}H${w - 20}" stroke="${INK.grid}"/><text x="${left - 7}" y="${y(yMax) + 4}" text-anchor="end" fill="${INK.axis}" font-size="13">${shortHP(yMax)}</text>`;
+    $('tactic-graph').innerHTML = `<h3>누적 피해 <small>경과 시간별 · 점선은 페이즈 HP 경계${yMax < r.totalHP ? ` · 세로축 최대 ${shortHP(yMax)} / 전체 ${shortHP(r.totalHP)}` : ''}</small></h3><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="경과 시간별 평균, 상위 5% 추정, 이론 고점의 누적 피해 그래프">${axisTop}${bounds.map(target => `<path d="M${left},${y(target)}H${w - 20}" stroke="${INK.grid}" stroke-dasharray="4 4"/><text x="${left - 7}" y="${y(target) + 4}" text-anchor="end" fill="${INK.axis}" font-size="13">${shortHP(target)}</text>`).join('')}${[0, .25, .5, .75, 1].map(f => `<text x="${x(r.duration * f)}" y="${h - 9}" text-anchor="middle" fill="${INK.axis}" font-size="13">${Math.round(r.duration * f)}초</text>`).join('')}${[...r.paths].reverse().map(p => { const points = [...p.timeline]; if (p.clearTime !== null) points.push({ time: r.duration, damage: p.damage }); return `<path d="${points.map((p, i) => `${i ? 'L' : 'M'}${x(p.time).toFixed(2)},${y(p.damage).toFixed(2)}`).join(' ')}" stroke="${CASE_COLOR[p.key]}" fill="none" stroke-width="2.5"/>`; }).join('')}${r.paths[0].events.filter(e => e.actionId !== undefined && e.type === 'cast').map((e, i) => `<g data-event-time="${e.time}" style="cursor:pointer"><title>${esc(seconds(e.time) + ' · ' + e.label.replaceAll(' → ', ' > '))}</title><path d="M${x(e.time)},${top}V${h-bottom}" stroke="${INK.grid}" stroke-dasharray="2 4"/><circle cx="${x(e.time)}" cy="${top + 8 + i % 3 * 14}" r="5" fill="${INK.cursor}"/></g>`).join('')}<path id="graph-cursor" d="M${left},${top}V${h - bottom}" stroke="${INK.cursor}" opacity=".5"/></svg><div class="chart-legend">${CASES.map(c => `<span><i style="background:${CASE_COLOR[c.key]}"></i>${esc(c.label)}</span>`).join('')}</div>`;
   }
   renderTime() {
     if (!this.result) return;
@@ -363,7 +379,7 @@ export class TacticUI {
     $('graph-cursor').setAttribute('transform', `translate(${time / this.result.duration * 822},0)`);
     this.result.paths.forEach((path, i) => {
       const p = pointAt(path, time), line = $('case-summary').children[i]?.querySelector('.at-cursor');
-      if (line) line.innerHTML = `이 시각 <b>${num(p.damage)}</b> 피해 · ${path.clearTime !== null && time >= path.clearTime ? '클리어' : `${p.phase + 1}페이즈 · 잔여 ${num(p.remaining)} HP`}`;
+      if (line) line.innerHTML = `<span>이 시각 <b>${num(p.damage)}</b> 피해</span><span>${path.clearTime !== null && time >= path.clearTime ? '클리어' : `${p.phase + 1}페이즈 · 잔여 ${num(p.remaining)} HP`}</span>`;
     });
     const recent = mean.events.filter(e => e.time <= time).slice(-12).reverse();
     $('timeline-events').innerHTML = recent.map(e => `<li class="event-${e.type}"><time>${seconds(e.time)}</time><span>${label(e.label)}</span>${e.type === 'cast' ? `<small>코스트 ${e.beforeCost.toFixed(2)}${ARROW}${e.cost.toFixed(2)} (−${e.spent})</small>` : ''}</li>`).join('') || '<li>아직 행동이 없습니다. 시간을 이동하거나 재생하세요.</li>';
@@ -381,8 +397,19 @@ export class TacticUI {
       const u=point.health?.[m.student.Id],dead=u?.deadAt!==null&&u?.deadAt!==undefined;
       return `<div class="${dead?'dead':'alive'}"><strong>${esc(m.student.Name)}</strong><span>${dead?`${seconds(u.deadAt)} 사망`:`HP ${num(u?.hp??0)} / ${num(u?.max??0)}`}</span><meter min="0" max="${u?.max??1}" value="${u?.hp??0}"></meter><small>보호막 ${num(u?.shield??0)}</small></div>`;
     }).join('');
-    $('plan-playhead')?.style.setProperty('left', `${124 + time / this.result.duration * Math.max(500, this.result.duration * (Number($('timeline-zoom').value) || 8))}px`);
+    this.placePlayhead(time);
     $('plan-clock').textContent = `${seconds(time)} / ${seconds(this.result.duration)}`;this.renderQuick();
+  }
+  // The CSS adds the label column width; while playing, keep the playhead in view.
+  placePlayhead(time) {
+    const head = $('plan-playhead'), box = $('planned-timeline'); if (!head) return;
+    const duration = Number($('sim-duration').value) || 180, width = Math.max(500, duration * (Number($('timeline-zoom').value) || 8));
+    const x = Math.min(1, Math.max(0, time / duration)) * width;
+    head.style.setProperty('--playhead', `${x}px`);
+    const track = box.querySelector('.plan-track');
+    if (this.frame === null || !track?.offsetParent) return;
+    const at = track.offsetLeft + x;
+    if (at < box.scrollLeft + track.offsetLeft || at > box.scrollLeft + box.clientWidth - 48) box.scrollLeft = Math.max(0, x - 48);
   }
   stop() { if (this.frame !== null) cancelAnimationFrame(this.frame); this.frame = null; this.setPlayState(false); }
   setPlayState(playing) { $('plan-play').textContent = playing ? '일시정지' : '재생'; $('plan-play').setAttribute('aria-pressed', playing); }

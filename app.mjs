@@ -51,7 +51,18 @@ function currentContext() { return contextForSelection; }
 const slotLabel = i => i < 4 ? `스트라이커 ${i + 1}` : `스페셜 ${i - 3}`;
 const battleNames = { raid: '총력전', eliminate: '대결전', drill: '종합전술시험', custom: '직접 입력' };
 let armedSlot = null;
-const setTeamMessage = text => { $('team-message').textContent = text; };
+let messageTimer = null;
+const setTeamMessage = text => {
+  $('team-message').textContent = text; clearTimeout(messageTimer);
+  if (text && armedSlot === null) messageTimer = setTimeout(() => { $('team-message').textContent = ''; }, 4000);
+};
+// Keep the selected student visible inside the roster's own scroll area.
+function revealRosterItem() {
+  const list = $('student-list'), item = list.querySelector('[aria-pressed="true"]'); if (!item) return;
+  const box = list.getBoundingClientRect(), at = item.getBoundingClientRect();
+  if (getComputedStyle(list).display === 'flex') { if (at.left < box.left || at.right > box.right) list.scrollLeft += at.left - box.left - 16; }
+  else if (at.top < box.top || at.bottom > box.bottom) list.scrollTop += at.top - box.top - box.height / 3;
+}
 
 function renderTeam() {
   savedBuilds.set(student.Id, build);
@@ -308,6 +319,19 @@ function renderChart() {
   $('level-chart').innerHTML = `<div class="chart-legend"><span><i style="background:${CHART.hp}"></i>체력 (최대 ${number(maxHP)})</span><span><i style="background:${CHART.atk}"></i>공격 (최대 ${number(maxATK)})</span></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="레벨별 체력과 공격력. 각 수치의 최댓값을 100%로 표시.">${[0, 1, 2, 3].map(i => `<path d="M${pad},${pad + i * (height - pad * 2) / 3}H${width - pad}" stroke="${CHART.grid}"/>`).join('')}<path d="${path('MaxHP', maxHP)}" fill="none" stroke="${CHART.hp}" stroke-width="2.5"/><path d="${path('AttackPower', maxATK)}" fill="none" stroke="${CHART.atk}" stroke-width="2.5"/>${text.map(level => `<text x="${pad + (level - 1) / (points.length - 1) * (width - pad * 2)}" y="${height - 3}" text-anchor="middle" font-size="11" fill="${CHART.axis}">${level}</text>`).join('')}</svg>`;
 }
 
+// The single-effect calculator reads the battle conditions from the tactic view; say which ones.
+const correctionIds = ['attack-buff', 'crit-buff', 'def-down', 'penetration', 'effective-buff', 'ex-buff', 'damage-buff'];
+function enemySummary(enemy) {
+  const mode = $('raid-mode').value;
+  const parts = mode === 'custom' ? ['직접 입력'] : [battleNames[mode], activeRaid?.Name, $('raid-difficulty').selectedOptions[0]?.text];
+  const target = $('raid-target').selectedOptions[0]?.text;
+  if (mode !== 'custom' && target && target !== activeRaid?.Name) parts.push(target);
+  parts.push(data.labels.ArmorType[enemy.armor], terrainNames[enemy.terrain], `Lv.${enemy.level}`, `방어력 ${number(enemy.defense)}`);
+  const corrections = correctionIds.filter(id => Number($(id).value)).length;
+  if (corrections) parts.push(`보정 ${corrections}개 적용`);
+  return parts.filter(Boolean).join(' · ');
+}
+
 function renderResult() {
   const entry = currentSkill();
   const effects = entry?.skill.Effects ?? [];
@@ -315,6 +339,7 @@ function renderResult() {
   const parent = entry?.parent ?? entry?.key;
   const level = build.skills[parent] ?? 1;
   const enemy = enemySettings();
+  $('result-target').textContent = enemySummary(enemy);
   const result = combatResult(student, build, data, entry?.skill ?? {}, effect, level, { ...currentContext()?.enemy, ...enemy });
   if (!result.supported) {
     $('result-status').textContent = 'INFO';
@@ -361,6 +386,7 @@ async function init() {
     $('data-source').textContent = `출처: Schale DB · 한국어 데이터 / 총 ${data.meta.count}명 · 한국·글로벌 ${data.meta.globalCount}명 · 일본 전용 ${data.meta.japanOnlyCount}명 · 원본 빌드 ${sourceDate} (한국 시간). 최신 출시 여부는 이 데이터 기준이며 자동 갱신되지 않습니다.`;
     const id = location.hash.match(/^#student-(\d+)$/)?.[1];
     selectStudent(id ?? 10000, Boolean(id));
+    revealRosterItem();
     renderRaid();
     tactic = new TacticUI(() => ({ data, raidData, members: members(), prepared: preparedTeam, enemy: enemySettings(),
       raid: activeRaid, battleKey: `${$('raid-mode').value}:${$('battle-server').value}`,
@@ -375,6 +401,8 @@ async function init() {
     const retry = document.createElement('button'); retry.textContent = '다시 시도'; retry.className = 'quiet-button retry';
     retry.addEventListener('click', () => location.reload()); $('load-error').append(retry);
     $('student-list').innerHTML = '<p class="empty">데이터 로딩 실패</p>';
+  } finally {
+    $('loading').hidden = true;
   }
 }
 
@@ -415,7 +443,7 @@ document.querySelectorAll('[data-open-workspace]').forEach(button=>button.addEve
 // A filled slot opens that student; an empty slot waits for the next student picked in the list.
 $('team-slots').addEventListener('click', event => {
   const edit = event.target.closest('[data-team-edit]'), remove = event.target.closest('[data-team-remove]'), arm = event.target.closest('[data-team-arm]');
-  if (edit) { armedSlot = null; selectStudent(teamIds[Number(edit.dataset.teamEdit)]); $('student-profile').scrollIntoView({block:'nearest'}); }
+  if (edit) { armedSlot = null; selectStudent(teamIds[Number(edit.dataset.teamEdit)]); revealRosterItem(); $('student-profile').scrollIntoView({block:'nearest'}); }
   if (remove) {
     const slot = Number(remove.dataset.teamRemove);
     setTeamMessage(`${data.students.find(s => s.Id === teamIds[slot]).Name} 편성 해제`);
